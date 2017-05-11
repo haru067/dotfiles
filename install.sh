@@ -10,3 +10,6 @@ else
   echo "Updating dotfiles..."
   (cd $dst && git pull)
 fi
+
+echo "Creating symbolic links..."
+ln -si $dst/src/.gitconfig $HOME/.gitconfig

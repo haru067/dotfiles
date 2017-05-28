@@ -16,8 +16,8 @@ ln -si $dst/src/.gitconfig $HOME/.gitconfig
 ln -si $dst/src/.zshrc $HOME/.zshrc
 if [ "$(uname)" == 'Darwin' ]; then
     #mac
-    ln -si $dst/src/_vimrc $HOME/_vimrc
-    ln -si $dst/src/_gvimrc $HOME/_gvimrc
+    ln -si $dst/src/.vimrc $HOME/_vimrc
+    ln -si $dst/src/.gvimrc $HOME/_gvimrc
 elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
     #linux
     :

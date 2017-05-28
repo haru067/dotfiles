@@ -47,8 +47,20 @@ endif
 " Basics
 " -----------------------------------------------------------------------------
 
-" Functons
+" Color scheme
 colorscheme molokai
+
+" Override molokai
+autocmd ColorScheme * hi LineNr guifg=#7E8E91 guibg=#232526
+autocmd ColorScheme * hi Comment guifg=#8E9EA1
+
+" Add extra space to the left side of line number
+augroup numberwidth
+    autocmd!
+    autocmd BufEnter,WinEnter,BufWinEnter * let &l:numberwidth = len(line("$")) + 2
+augroup END
+
+" Functons
 syntax on " Enable syntax highlight
 filetype on
 

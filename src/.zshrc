@@ -51,3 +51,9 @@ precmd () {
 }
 # Display the branch if it's managed by Git
 RPROMPT="%1(v|%F{green}%1v%f|)"
+
+# Update PATH for the Google Cloud SDK.
+if [ -f "$HOME/etc/google-cloud-sdk/path.zsh.inc" ]; then source "$HOME/etc/google-cloud-sdk/path.zsh.inc"; fi
+
+# Enable shell command completion for gcloud.
+if [ -f "$HOME/etc/google-cloud-sdk/completion.zsh.inc" ]; then source "$HOME/etc/google-cloud-sdk/completion.zsh.inc"; fi

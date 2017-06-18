@@ -19,7 +19,10 @@ if [ "$(uname)" == 'Darwin' ]; then
     vscode="$HOME/Library/Application Support/Code/User"
     ln -si $dst/src/.vimrc $HOME/_vimrc
     ln -si $dst/src/.gvimrc $HOME/_gvimrc
-    if [ -f "$vscode/settings.json" ]; then
+    if [ -L "$vscode/settings.json" ]; then
+        ln -si "$dst/src/settings.json" "$vscode/settings.json"
+    elif [ -f "$vscode/settings.json" ]; then
+        # Backup original file
         mv "$vscode/settings.json" "$vscode/settings.json.backup_$(date +%s)"
         ln -si "$dst/src/settings.json" "$vscode/settings.json"
     fi

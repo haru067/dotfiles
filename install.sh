@@ -2,6 +2,7 @@
 set -euo pipefail
 
 dst="$HOME/dotfiles"
+vscode="$HOME/Library/Application Support/Code/User"
 
 if [ ! -e $dst/.git ]; then
     echo "Cloning dotfiles..."
@@ -18,6 +19,10 @@ if [ "$(uname)" == 'Darwin' ]; then
     #mac
     ln -si $dst/src/.vimrc $HOME/_vimrc
     ln -si $dst/src/.gvimrc $HOME/_gvimrc
+    if [ -f "$vscode/settings.json" ]; then
+        mv "$vscode/settings.json" "$vscode/settings.json.backup_$(date +%s)"
+        ln -si "$dst/src/settings.json" "$vscode/settings.json"
+    fi
 elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
     #linux
     :

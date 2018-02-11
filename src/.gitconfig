@@ -3,3 +3,7 @@
     name = haru067
     email = haru.pdf@gmail.com
 
+[diff "sketchtool"]
+    textconv = "sketchtool dump"
+    cachetextconv = true
+    binary = true

@@ -13,6 +13,7 @@ fi
 
 echo "Creating symbolic links..."
 ln -si $dst/src/.gitconfig $HOME/.gitconfig
+ln -si $dst/src/.gitattributes $HOME/.gitattrivutes
 ln -si $dst/src/.zshrc $HOME/.zshrc
 if [ "$(uname)" == 'Darwin' ]; then
     #mac

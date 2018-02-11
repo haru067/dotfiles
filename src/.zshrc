@@ -2,6 +2,7 @@ bindkey -e
 export EDITOR=vim
 
 export PATH=/usr/local/bin:$PATH
+export PATH=$HOME/.nodebrew/current/bin:$PATH
 
 # Alias
 alias ls='ls -G'
@@ -10,6 +11,7 @@ alias ll='ls -G -A -h -l -F'
 alias gvim='open -a MacVim'
 alias adobe='open -a Adobe\ Reader'
 alias adblayout='adb shell setprop debug.layout'
+alias hugon='hugo new --editor="code"'
 
 HISTFILE=$HOME/.zsh-history
 HISTSIZE=100000

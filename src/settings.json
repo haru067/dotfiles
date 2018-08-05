@@ -1,9 +1,4 @@
 {
-    "workbench.colorCustomizations": {
-        "statusBar.background": "#005f5f",
-        "statusBar.noFolderBackground": "#005f5f",
-        "statusBar.debuggingBackground": "#005f5f"
-    },
     "editor.minimap.enabled": false,
     "vim.otherModesKeyBindingsNonRecursive": [
         {"before": [";"], "after": [":"]},
@@ -13,5 +8,8 @@
         {"before": ["<C-c>"], "after": ["<ESC>"]},
         {"before": ["j", "j"], "after": ["<ESC>"]},
         {"before": ["っ", "ｊ"], "after": ["<ESC>"]}
-    ]
+    ],
+    "[html]": {
+        "editor.tabSize": 2
+    }
 }

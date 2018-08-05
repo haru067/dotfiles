@@ -12,21 +12,16 @@ else
 fi
 
 echo "Creating symbolic links..."
-ln -si $dst/src/.gitconfig $HOME/.gitconfig
-ln -si $dst/src/.gitattributes $HOME/.gitattrivutes
-ln -si $dst/src/.zshrc $HOME/.zshrc
+ln -si $dst/src/.gitconfig $HOME/.gitconfig || echo "skipped"
+ln -si $dst/src/.gitattributes $HOME/.gitattrivutes || echo "skipped"
+ln -si $dst/src/.zshrc $HOME/.zshrc || echo "skipped"
 if [ "$(uname)" == 'Darwin' ]; then
     #mac
     vscode="$HOME/Library/Application Support/Code/User"
-    ln -si $dst/src/.vimrc $HOME/_vimrc
-    ln -si $dst/src/.gvimrc $HOME/_gvimrc
-    if [ -L "$vscode/settings.json" ]; then
-        ln -si "$dst/src/settings.json" "$vscode/settings.json"
-    elif [ -f "$vscode/settings.json" ]; then
-        # Backup original file
-        mv "$vscode/settings.json" "$vscode/settings.json.backup_$(date +%s)"
-        ln -si "$dst/src/settings.json" "$vscode/settings.json"
-    fi
+    ln -si $dst/src/.vimrc $HOME/_vimrc || echo "skipped"
+    ln -si $dst/src/.gvimrc $HOME/_gvimrc || echo "skipped"
+    ln -si "$dst/src/settings.json" "$vscode/settings.json" || echo "skipped"
+    ln -si "$dst/src/keybindings.json" "$vscode/keybindings.json" || echo "skipped"
 elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
     #linux
     :

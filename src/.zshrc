@@ -3,6 +3,7 @@ export EDITOR=vim
 
 export PATH=/usr/local/bin:$PATH
 export PATH=$HOME/.nodebrew/current/bin:$PATH
+export PATH=$HOME/Library/Android/sdk/platform-tools:$PATH
 
 # Alias
 alias ls='ls -G'

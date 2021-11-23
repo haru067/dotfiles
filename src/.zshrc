@@ -33,12 +33,13 @@ colors
 PROMPT="%{${fg[yellow]}%}%~%{${fg[cyan]}%} %(!.#.$) %{${reset_color}%}"
 
 # brew install zsh-syntax-highlighting
-if [ -e /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]; then
-  source /usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+if [ -e $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]; then
+  source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 fi
+
 # brew install zsh-completions
-if [ -e /usr/local/share/zsh-completions ]; then
-    fpath=(/usr/local/share/zsh-completions $fpath)
+if [ -e $(brew --prefix)/share/zsh-completions ]; then
+    fpath=($(brew --prefix)/share/zsh-completions $fpath)
 fi
 
 # Git

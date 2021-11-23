@@ -26,7 +26,7 @@ endif
 " Settings
 if dein#load_state(s:dein_dir)
   call dein#begin(s:dein_dir)
-  call dein#add('tomasr/molokai')
+"  call dein#add('tomasr/molokai')
 
   let g:rc_dir    = expand('~/dotfiles/dein')
   let s:toml      = g:rc_dir . '/dein.toml'

@@ -15,6 +15,7 @@ echo "Creating symbolic links..."
 ln -si $dst/src/.gitconfig $HOME/.gitconfig || echo "skipped"
 ln -si $dst/src/.gitattributes $HOME/.gitattrivutes || echo "skipped"
 ln -si $dst/src/.zshrc $HOME/.zshrc || echo "skipped"
+ln -si $dst/src/.ideavimrc $HOME/.ideavimrc || echo "skipped"
 if [ "$(uname)" == 'Darwin' ]; then
     #mac
     vscode="$HOME/Library/Application Support/Code/User"

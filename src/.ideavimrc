@@ -1,0 +1,10 @@
+inoremap <C-c> <ESC>
+inoremap <silent> jj <ESC>
+inoremap <silent> っｊ <ESC>
+
+" For US keyboard
+noremap ; :
+noremap : ;
+
+set ignorecase        " `ignorecase` hits `IgnoreCase`
+set smartcase         " `IgnoreCase` hits `ignorecase`

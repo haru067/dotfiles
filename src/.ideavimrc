@@ -1,4 +1,5 @@
 inoremap <C-c> <ESC>
+nnoremap <C-c> <ESC>
 inoremap <silent> jj <ESC>
 inoremap <silent> っｊ <ESC>
 

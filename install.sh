@@ -23,6 +23,8 @@ if [ "$(uname)" == 'Darwin' ]; then
     ln -si $dst/src/.gvimrc $HOME/_gvimrc || echo "skipped"
     ln -si "$dst/src/settings.json" "$vscode/settings.json" || echo "skipped"
     ln -si "$dst/src/keybindings.json" "$vscode/keybindings.json" || echo "skipped"
+    mkdir -p "$HOME/.config/ghostty"
+    ln -si "$dst/src/ghostty-config" "$HOME/.config/ghostty/config" || echo "skipped"
 elif [ "$(expr substr $(uname -s) 1 5)" == 'Linux' ]; then
     #linux
     :

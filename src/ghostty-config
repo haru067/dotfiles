@@ -1,0 +1,30 @@
+font-family = CommitMonog
+adjust-cell-height = 20%
+window-padding-x = 8
+window-padding-y = 8
+
+# haru theme (from iTerm2)
+background = #222426
+foreground = #D8D8D8
+cursor-color = #B7DD6C
+cursor-text = #222426
+cursor-style = underline
+selection-background = #164F7C
+selection-foreground = #D8D8D8
+
+palette = 0=#222426
+palette = 1=#E06277
+palette = 2=#B7DD6C
+palette = 3=#DEB757
+palette = 4=#5790DB
+palette = 5=#E682AD
+palette = 6=#61BADB
+palette = 7=#D8D8D8
+palette = 8=#838383
+palette = 9=#E53D59
+palette = 10=#AAD94D
+palette = 11=#DEAE36
+palette = 12=#357DDC
+palette = 13=#E160A9
+palette = 14=#3CB2DE
+palette = 15=#E9E9E9

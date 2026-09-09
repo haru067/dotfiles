@@ -1,0 +1,143 @@
+#!/bin/bash
+# git tidy — switch to the default branch, fast-forward it, and delete the local
+# branches whose work has already landed there.
+#
+# Work in progress is never destroyed. A dirty tree, a detached HEAD or a paused
+# rebase/merge keeps the current branch checked out (the default branch is still
+# brought up to date in place), and branches go through `git branch -d`, which
+# refuses anything not already merged. Nothing is reset, forced or cleaned, and
+# the default branch is only ever fast-forwarded.
+#
+#   git tidy              switch, update, delete merged branches
+#   git tidy -n           show what it would do, change nothing
+#   git tidy --squashed   also delete branches that landed as a squash merge,
+#                         found by replaying their diff onto the default branch
+#                         (these need -D, since they share no commit with it)
+set -euo pipefail
+
+dry_run=false
+squashed=false
+for arg in "$@"; do
+  case "$arg" in
+    -n|--dry-run) dry_run=true ;;
+    --squashed) squashed=true ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
+    *) echo "git tidy: unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# Fails with git's own message when this is not a repository.
+git_dir=$(git rev-parse --git-dir)
+
+say() { printf '%s\n' "$*"; }
+act() { if $dry_run; then say "  would: $*"; else "$@"; fi; }
+
+# Prefers what the remote calls its default, recording it so later runs need no
+# network. Falls back to the usual names for a repository without a remote.
+resolve_default() {
+  local ref name
+  if ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null); then
+    printf '%s\n' "${ref#refs/remotes/origin/}"; return 0
+  fi
+  if git remote get-url origin >/dev/null 2>&1; then
+    git remote set-head origin --auto >/dev/null 2>&1 || true
+    if ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null); then
+      printf '%s\n' "${ref#refs/remotes/origin/}"; return 0
+    fi
+  fi
+  for name in main master trunk; do
+    if git show-ref --verify --quiet "refs/heads/$name"; then printf '%s\n' "$name"; return 0; fi
+  done
+  return 1
+}
+
+# Why the checkout has to be left where it is, or empty when it may be switched.
+holding() {
+  if [ -n "$(git status --porcelain)" ]; then say "uncommitted changes"; return 0; fi
+  if [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ]; then say "a rebase in progress"; return 0; fi
+  if [ -f "$git_dir/MERGE_HEAD" ]; then say "a merge in progress"; return 0; fi
+  if [ -f "$git_dir/CHERRY_PICK_HEAD" ]; then say "a cherry-pick in progress"; return 0; fi
+  if [ -f "$git_dir/BISECT_LOG" ]; then say "a bisect in progress"; return 0; fi
+  if ! git symbolic-ref --quiet HEAD >/dev/null 2>&1; then say "a detached HEAD"; return 0; fi
+  return 0
+}
+
+# A squash merge leaves no commit in common, so the branch is replayed as one
+# commit on the merge base and its patch looked for in the default branch.
+landed_as_squash() {
+  local branch=$1 base_commit tree replayed
+  base_commit=$(git merge-base "$default" "$branch" 2>/dev/null) || return 1
+  tree=$(git rev-parse "$branch^{tree}")
+  replayed=$(git commit-tree "$tree" -p "$base_commit" -m tidy)
+  case "$(git cherry "$default" "$replayed")" in "-"*) return 0 ;; *) return 1 ;; esac
+}
+
+if ! default=$(resolve_default); then
+  say "git tidy: cannot tell which branch is the default." >&2
+  say "  set it with: git remote set-head origin --auto" >&2
+  exit 1
+fi
+
+has_origin=false
+if git remote get-url origin >/dev/null 2>&1; then
+  has_origin=true
+  say "fetching origin"
+  git fetch --prune --quiet origin
+fi
+
+current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+held=$(holding)
+
+if [ "$current" != "$default" ]; then
+  if [ -n "$held" ]; then
+    say "staying on ${current:-detached HEAD}: $held"
+  else
+    act git switch --quiet "$default"
+    $dry_run || current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  fi
+fi
+
+# Fast-forward only, checked out or not: a default branch that has diverged
+# locally is something to look at, not something to overwrite. Git refuses on
+# its own if local edits are in the way, which is the answer we want anyway.
+if $has_origin && git show-ref --verify --quiet "refs/remotes/origin/$default"; then
+  if [ "$current" = "$default" ]; then
+    act git merge --ff-only --quiet "origin/$default" || say "could not fast-forward $default; left alone"
+  else
+    act git fetch --quiet origin "$default:$default" || say "could not fast-forward $default; left alone"
+  fi
+fi
+
+# A branch checked out in another worktree is in use, and git would refuse it.
+elsewhere=$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
+deleted=0
+kept=0
+
+for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
+  [ "$branch" = "$default" ] && continue
+  [ "$branch" = "$current" ] && continue
+  case $'\n'"$elsewhere"$'\n' in *$'\n'"$branch"$'\n'*) continue ;; esac
+
+  reason=""
+  if git merge-base --is-ancestor "$branch" "$default" 2>/dev/null; then
+    reason="merged"
+  elif $squashed && landed_as_squash "$branch"; then
+    reason="squashed"
+  fi
+  if [ -z "$reason" ]; then kept=$((kept + 1)); continue; fi
+
+  say "  $reason: $branch"
+  flag=-d
+  [ "$reason" = squashed ] && flag=-D
+  if act git branch --quiet "$flag" "$branch"; then
+    deleted=$((deleted + 1))
+  else
+    say "    kept: git refused to delete it"
+    kept=$((kept + 1))
+  fi
+done
+
+say "on ${current:-detached HEAD} · deleted $deleted · kept $kept"
+if [ "$kept" -gt 0 ] && ! $squashed; then
+  say "kept branches hold commits not in $default; add --squashed if they were squash-merged"
+fi

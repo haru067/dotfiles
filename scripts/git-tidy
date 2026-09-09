@@ -34,18 +34,20 @@ say() { printf '%s\n' "$*"; }
 act() { if $dry_run; then say "  would: $*"; else "$@"; fi; }
 
 # Prefers what the remote calls its default, recording it so later runs need no
-# network. Falls back to the usual names for a repository without a remote.
+# network. origin/HEAD is a symbolic ref and keeps resolving after the branch it
+# names is renamed or deleted, so it is only trusted when it still points at a
+# ref that exists; otherwise the whole run would target a branch that is gone.
+# Falls back to the usual names for a repository without a remote.
 resolve_default() {
   local ref name
-  if ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null); then
-    printf '%s\n' "${ref#refs/remotes/origin/}"; return 0
-  fi
-  if git remote get-url origin >/dev/null 2>&1; then
+  ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [ -n "$ref" ] && ! git show-ref --verify --quiet "$ref"; then ref=""; fi
+  if [ -z "$ref" ] && git remote get-url origin >/dev/null 2>&1; then
     git remote set-head origin --auto >/dev/null 2>&1 || true
-    if ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null); then
-      printf '%s\n' "${ref#refs/remotes/origin/}"; return 0
-    fi
+    ref=$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null || true)
+    if [ -n "$ref" ] && ! git show-ref --verify --quiet "$ref"; then ref=""; fi
   fi
+  if [ -n "$ref" ]; then printf '%s\n' "${ref#refs/remotes/origin/}"; return 0; fi
   for name in main master trunk; do
     if git show-ref --verify --quiet "refs/heads/$name"; then printf '%s\n' "$name"; return 0; fi
   done
@@ -73,17 +75,18 @@ landed_as_squash() {
   case "$(git cherry "$default" "$replayed")" in "-"*) return 0 ;; *) return 1 ;; esac
 }
 
-if ! default=$(resolve_default); then
-  say "git tidy: cannot tell which branch is the default." >&2
-  say "  set it with: git remote set-head origin --auto" >&2
-  exit 1
-fi
-
 has_origin=false
 if git remote get-url origin >/dev/null 2>&1; then
   has_origin=true
   say "fetching origin"
   git fetch --prune --quiet origin
+fi
+
+# After the fetch, so a branch the remote has just dropped is already gone.
+if ! default=$(resolve_default); then
+  say "git tidy: cannot tell which branch is the default." >&2
+  say "  set it with: git remote set-head origin --auto" >&2
+  exit 1
 fi
 
 # Only drops registrations whose directory is already gone.

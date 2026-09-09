@@ -1,9 +1,14 @@
 # This is Git's per-user configuration file.
-[user]
-    name = haru067
-    email = haru.pdf@gmail.com
+# Identity lives in ~/.gitconfig.local, which is not in this repository: it is
+# public, and a name and address do not belong in it. Git ignores the include
+# when the file is absent, so a new machine is told to create it by the first
+# commit that fails.
+[include]
+    path = ~/.gitconfig.local
 
 [diff "sketchtool"]
     textconv = "sketchtool dump"
     cachetextconv = true
     binary = true
+[init]
+    defaultBranch = main

@@ -4,15 +4,16 @@
 #
 # Work in progress is never destroyed. A dirty tree, a detached HEAD or a paused
 # rebase/merge keeps the current branch checked out (the default branch is still
-# brought up to date in place), and branches go through `git branch -d`, which
-# refuses anything not already merged. Nothing is reset, forced or cleaned, and
-# the default branch is only ever fast-forwarded.
+# brought up to date in place), and a branch is only deleted once every one of
+# its commits is proven to be in the default branch already. Nothing is reset,
+# forced or cleaned, and the default branch is only ever fast-forwarded.
 #
 #   git tidy              switch, update, delete merged branches
 #   git tidy -n           show what it would do, change nothing
-#   git tidy --squashed   also delete branches that landed as a squash merge,
-#                         found by replaying their diff onto the default branch
-#                         (these need -D, since they share no commit with it)
+#   git tidy --squashed   also delete branches that landed as a squash merge.
+#                         They share no commit with the default branch, so this
+#                         compares diffs instead of ancestry: a weaker proof,
+#                         which is why it is opt-in.
 set -euo pipefail
 
 dry_run=false
@@ -21,7 +22,7 @@ for arg in "$@"; do
   case "$arg" in
     -n|--dry-run) dry_run=true ;;
     --squashed) squashed=true ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
+    -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
     *) echo "git tidy: unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -126,10 +127,12 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   fi
   if [ -z "$reason" ]; then kept=$((kept + 1)); continue; fi
 
+  # `git branch -d` answers a different question: it compares against the
+  # upstream when a branch has one, so a stale remote-tracking ref makes it
+  # refuse work that is demonstrably in the default branch. Ancestry, checked
+  # just above, is the property that means nothing can be lost.
   say "  $reason: $branch"
-  flag=-d
-  [ "$reason" = squashed ] && flag=-D
-  if act git branch --quiet "$flag" "$branch"; then
+  if act git branch --quiet -D "$branch"; then
     deleted=$((deleted + 1))
   else
     say "    kept: git refused to delete it"

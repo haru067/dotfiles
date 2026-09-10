@@ -160,7 +160,8 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   # just above, is the property that means nothing can be lost.
   if act git branch --quiet -D "$branch"; then
     deleted=$((deleted + 1))
-    deleted_names="${deleted_names:+$deleted_names, }$branch"
+    deleted_names="${deleted_names}${deleted_names:+
+}  - $branch"
   else
     failed=$((failed + 1))
   fi
@@ -175,7 +176,6 @@ else
   if $default_up_to_date; then summary="$summary · $default up to date"; fi
   summary="$summary · deleted $deleted"
 fi
-[ "$deleted" -eq 0 ] || summary="$summary ($deleted_names)"
 remaining=$((kept + in_use + failed))
 summary="$summary · kept $remaining"
 if [ "$remaining" -gt 0 ]; then
@@ -186,6 +186,7 @@ if [ "$remaining" -gt 0 ]; then
   summary="$summary ($reasons)"
 fi
 say "$summary"
+[ "$deleted" -eq 0 ] || say "$deleted_names"
 [ -z "$checkout_note" ] || say "$checkout_note"
 [ -z "$update_note" ] || say "$update_note"
 exit 0

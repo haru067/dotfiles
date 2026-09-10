@@ -128,8 +128,12 @@ elsewhere=$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
 deleted=0
 deleted_names=""
 kept=0
-in_use=0
-failed=0
+kept_names=""
+record_kept() {
+  kept=$((kept + 1))
+  kept_names="${kept_names}${kept_names:+
+}  $1 ($2)"
+}
 
 # Collect results without printing the individual steps.
 for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
@@ -141,7 +145,7 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
 
   case $'\n'"$elsewhere"$'\n' in
     *$'\n'"$branch"$'\n'*)
-      in_use=$((in_use + 1)); continue ;;
+      record_kept "$branch" "in use by worktree"; continue ;;
   esac
 
   reason=""
@@ -151,7 +155,7 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     reason="squashed"
   fi
   if [ -z "$reason" ]; then
-    kept=$((kept + 1)); continue
+    record_kept "$branch" "unmerged"; continue
   fi
 
   # `git branch -d` answers a different question: it compares against the
@@ -161,32 +165,38 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   if act git branch --quiet -D "$branch"; then
     deleted=$((deleted + 1))
     deleted_names="${deleted_names}${deleted_names:+
-}  - $branch"
+}  $branch"
   else
-    failed=$((failed + 1))
+    record_kept "$branch" "deletion failed"
   fi
 done
 
 # Report the checkout actually inspected, including for dry runs.
 result_current=${current:-detached HEAD}
 if $dry_run; then
-  summary="dry run: on $result_current · would delete $deleted"
+  say "Dry run: on $result_current"
 else
-  summary="on $result_current"
-  if $default_up_to_date; then summary="$summary · $default up to date"; fi
-  summary="$summary · deleted $deleted"
+  if $default_up_to_date && [ "$current" = "$default" ]; then
+    say "On $result_current (up to date)"
+  else
+    say "On $result_current"
+    if $default_up_to_date; then say "$default: up to date"; fi
+  fi
 fi
-remaining=$((kept + in_use + failed))
-summary="$summary · kept $remaining"
-if [ "$remaining" -gt 0 ]; then
-  reasons=""
-  [ "$kept" -eq 0 ] || reasons="$kept unmerged"
-  [ "$in_use" -eq 0 ] || reasons="${reasons:+$reasons, }$in_use in worktrees"
-  [ "$failed" -eq 0 ] || reasons="${reasons:+$reasons, }$failed deletion failed"
-  summary="$summary ($reasons)"
-fi
-say "$summary"
-[ "$deleted" -eq 0 ] || say "$deleted_names"
 [ -z "$checkout_note" ] || say "$checkout_note"
 [ -z "$update_note" ] || say "$update_note"
+say ""
+if $dry_run; then
+  say "Would delete branches: $deleted"
+else
+  say "Deleted branches: $deleted"
+fi
+[ "$deleted" -eq 0 ] || say "$deleted_names"
+say ""
+if $dry_run; then
+  say "Would keep branches: $kept"
+else
+  say "Kept branches: $kept"
+fi
+[ "$kept" -eq 0 ] || say "$kept_names"
 exit 0

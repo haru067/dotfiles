@@ -31,7 +31,7 @@ done
 git_dir=$(git rev-parse --git-dir)
 
 say() { printf '%s\n' "$*"; }
-act() { if $dry_run; then say "  would: $*"; else "$@"; fi; }
+act() { if ! $dry_run; then "$@"; fi; }
 
 # Prefers what the remote calls its default, recording it so later runs need no
 # network. origin/HEAD is a symbolic ref and keeps resolving after the branch it
@@ -78,7 +78,6 @@ landed_as_squash() {
 has_origin=false
 if git remote get-url origin >/dev/null 2>&1; then
   has_origin=true
-  say "fetching origin"
   git fetch --prune --quiet origin
 fi
 
@@ -94,10 +93,12 @@ act git worktree prune
 
 current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 held=$(holding)
+checkout_note=""
+update_note=""
 
 if [ "$current" != "$default" ]; then
   if [ -n "$held" ]; then
-    say "staying on ${current:-detached HEAD}: $held"
+    checkout_note="stayed on ${current:-detached HEAD}: $held"
   else
     act git switch --quiet "$default"
     $dry_run || current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
@@ -109,9 +110,9 @@ fi
 # its own if local edits are in the way, which is the answer we want anyway.
 if $has_origin && git show-ref --verify --quiet "refs/remotes/origin/$default"; then
   if [ "$current" = "$default" ]; then
-    act git merge --ff-only --quiet "origin/$default" || say "could not fast-forward $default; left alone"
+    act git merge --ff-only --quiet "origin/$default" || update_note="could not fast-forward $default; left alone"
   else
-    act git fetch --quiet origin "$default:$default" || say "could not fast-forward $default; left alone"
+    act git fetch --quiet origin "$default:$default" || update_note="could not fast-forward $default; left alone"
   fi
 fi
 
@@ -120,9 +121,9 @@ elsewhere=$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
 deleted=0
 kept=0
 in_use=0
+failed=0
 
-# Every surviving branch says why, so the leftovers after a run are never a
-# mystery: a silent skip reads as a failure.
+# Collect results without printing the individual steps.
 for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   [ "$branch" = "$default" ] && continue
   [ "$branch" = "$current" ] && continue
@@ -132,7 +133,6 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
 
   case $'\n'"$elsewhere"$'\n' in
     *$'\n'"$branch"$'\n'*)
-      if $merged; then say "  in a worktree, already merged: $branch"; else say "  in a worktree: $branch"; fi
       in_use=$((in_use + 1)); continue ;;
   esac
 
@@ -143,7 +143,6 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
     reason="squashed"
   fi
   if [ -z "$reason" ]; then
-    say "  unmerged: $branch"
     kept=$((kept + 1)); continue
   fi
 
@@ -151,21 +150,30 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   # upstream when a branch has one, so a stale remote-tracking ref makes it
   # refuse work that is demonstrably in the default branch. Ancestry, checked
   # just above, is the property that means nothing can be lost.
-  say "  $reason: $branch"
   if act git branch --quiet -D "$branch"; then
     deleted=$((deleted + 1))
   else
-    say "    kept: git refused to delete it"
-    kept=$((kept + 1))
+    failed=$((failed + 1))
   fi
 done
 
-summary="on ${current:-detached HEAD} · deleted $deleted · kept $kept"
-if [ "$in_use" -gt 0 ]; then summary="$summary · in a worktree $in_use"; fi
+# Report the checkout actually inspected, including for dry runs.
+result_current=${current:-detached HEAD}
+if $dry_run; then
+  summary="dry run: on $result_current · would delete $deleted"
+else
+  summary="on $result_current · deleted $deleted"
+fi
+remaining=$((kept + in_use + failed))
+summary="$summary · kept $remaining"
+if [ "$remaining" -gt 0 ]; then
+  reasons=""
+  [ "$kept" -eq 0 ] || reasons="$kept unmerged"
+  [ "$in_use" -eq 0 ] || reasons="${reasons:+$reasons, }$in_use in worktrees"
+  [ "$failed" -eq 0 ] || reasons="${reasons:+$reasons, }$failed deletion failed"
+  summary="$summary ($reasons)"
+fi
 say "$summary"
-if [ "$kept" -gt 0 ] && ! $squashed; then
-  say "unmerged branches hold commits not in $default; add --squashed if they were squash-merged"
-fi
-if [ "$in_use" -gt 0 ]; then
-  say "branches in a worktree are left alone; 'git worktree list' shows where they are"
-fi
+[ -z "$checkout_note" ] || say "$checkout_note"
+[ -z "$update_note" ] || say "$update_note"
+exit 0

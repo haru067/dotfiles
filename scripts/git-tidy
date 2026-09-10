@@ -95,6 +95,7 @@ current=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 held=$(holding)
 checkout_note=""
 update_note=""
+default_up_to_date=false
 
 if [ "$current" != "$default" ]; then
   if [ -n "$held" ]; then
@@ -116,9 +117,16 @@ if $has_origin && git show-ref --verify --quiet "refs/remotes/origin/$default"; 
   fi
 fi
 
+if ! $dry_run && $has_origin && git show-ref --verify --quiet "refs/remotes/origin/$default"; then
+  if [ "$(git rev-parse "refs/heads/$default")" = "$(git rev-parse "refs/remotes/origin/$default")" ]; then
+    default_up_to_date=true
+  fi
+fi
+
 # A branch checked out in another worktree is in use, and git would refuse it.
 elsewhere=$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
 deleted=0
+deleted_names=""
 kept=0
 in_use=0
 failed=0
@@ -152,6 +160,7 @@ for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/); do
   # just above, is the property that means nothing can be lost.
   if act git branch --quiet -D "$branch"; then
     deleted=$((deleted + 1))
+    deleted_names="${deleted_names:+$deleted_names, }$branch"
   else
     failed=$((failed + 1))
   fi
@@ -162,8 +171,11 @@ result_current=${current:-detached HEAD}
 if $dry_run; then
   summary="dry run: on $result_current · would delete $deleted"
 else
-  summary="on $result_current · deleted $deleted"
+  summary="on $result_current"
+  if $default_up_to_date; then summary="$summary · $default up to date"; fi
+  summary="$summary · deleted $deleted"
 fi
+[ "$deleted" -eq 0 ] || summary="$summary ($deleted_names)"
 remaining=$((kept + in_use + failed))
 summary="$summary · kept $remaining"
 if [ "$remaining" -gt 0 ]; then

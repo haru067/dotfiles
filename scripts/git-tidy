@@ -1,6 +1,6 @@
 #!/bin/bash
-# git tidy — switch to the default branch, fast-forward it, and delete local
-# branches and, when requested, worktrees whose work has already landed there.
+# git tidy — switch to the default branch, fast-forward it, and delete clean
+# worktrees and local branches whose work has already landed there.
 #
 # Work in progress is never destroyed. A dirty tree, a detached HEAD or a paused
 # rebase/merge keeps the current branch checked out (the default branch is still
@@ -8,25 +8,27 @@
 # its commits is proven to be in the default branch already. Nothing is reset,
 # forced or cleaned, and the default branch is only ever fast-forwarded.
 #
-#   git tidy              switch, update, delete merged branches
+#   git tidy              switch, update, remove merged worktrees and branches
 #   git tidy -n           show what it would do, change nothing
-#   git tidy --worktrees  also remove clean, unlocked, merged worktrees. This is
-#                         opt-in because Git cannot tell whether another tool
-#                         intends to resume work in an otherwise safe worktree;
-#                         ignored files are removed with an eligible worktree.
+#   git tidy --no-worktrees
+#                         leave existing worktrees in place and only tidy branches
 #   git tidy --squashed   also delete branches that landed as a squash merge.
 #                         They share no commit with the default branch, so this
 #                         compares diffs instead of ancestry: a weaker proof,
 #                         which is why it is opt-in.
+#
+# Git cannot tell whether another tool intends to resume work in an otherwise
+# safe worktree. Lock such a worktree to preserve it. Ignored files are removed
+# with an eligible worktree.
 set -euo pipefail
 
 dry_run=false
 squashed=false
-remove_worktrees=false
+remove_worktrees=true
 for arg in "$@"; do
   case "$arg" in
     -n|--dry-run) dry_run=true ;;
-    --worktrees) remove_worktrees=true ;;
+    --no-worktrees) remove_worktrees=false ;;
     --squashed) squashed=true ;;
     -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
     *) echo "git tidy: unknown option: $arg" >&2; exit 2 ;;

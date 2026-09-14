@@ -48,17 +48,17 @@ git -C "$fixture_root/unmerged" commit --quiet -am unmerged
 
 git -C "$repo" worktree add --quiet --detach "$fixture_root/detached" main
 
-output=$(cd "$repo" && "$script_dir/scripts/git-tidy")
+output=$(cd "$repo" && "$script_dir/scripts/git-tidy" --no-worktrees)
 test -d "$fixture_root/merged worktree"
-case "$output" in *"merged (in use by worktree)"*) ;; *) echo "default run did not preserve worktree branch" >&2; exit 1 ;; esac
+case "$output" in *"merged (in use by worktree)"*) ;; *) echo "--no-worktrees did not preserve worktree branch" >&2; exit 1 ;; esac
 
-output=$(cd "$repo" && "$script_dir/scripts/git-tidy" --worktrees --dry-run)
+output=$(cd "$repo" && "$script_dir/scripts/git-tidy" --dry-run)
 case "$output" in *"Would remove worktrees: 2"*) ;; *) echo "dry run found the wrong removal count" >&2; exit 1 ;; esac
 case "$output" in *"Would delete branches: 1"*) ;; *) echo "dry run found the wrong branch count" >&2; exit 1 ;; esac
 test -d "$fixture_root/merged worktree"
 test -d "$fixture_root/detached"
 
-output=$(cd "$repo" && "$script_dir/scripts/git-tidy" --worktrees)
+output=$(cd "$repo" && "$script_dir/scripts/git-tidy")
 case "$output" in *"Removed worktrees: 2"*) ;; *) echo "run removed the wrong number of worktrees" >&2; exit 1 ;; esac
 case "$output" in *"Kept worktrees: 3"*) ;; *) echo "run kept the wrong number of worktrees" >&2; exit 1 ;; esac
 test ! -e "$fixture_root/merged worktree"

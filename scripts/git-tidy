@@ -1,6 +1,6 @@
 #!/bin/bash
-# git tidy — switch to the default branch, fast-forward it, and delete the local
-# branches whose work has already landed there.
+# git tidy — switch to the default branch, fast-forward it, and delete local
+# branches and, when requested, worktrees whose work has already landed there.
 #
 # Work in progress is never destroyed. A dirty tree, a detached HEAD or a paused
 # rebase/merge keeps the current branch checked out (the default branch is still
@@ -10,6 +10,10 @@
 #
 #   git tidy              switch, update, delete merged branches
 #   git tidy -n           show what it would do, change nothing
+#   git tidy --worktrees  also remove clean, unlocked, merged worktrees. This is
+#                         opt-in because Git cannot tell whether another tool
+#                         intends to resume work in an otherwise safe worktree;
+#                         ignored files are removed with an eligible worktree.
 #   git tidy --squashed   also delete branches that landed as a squash merge.
 #                         They share no commit with the default branch, so this
 #                         compares diffs instead of ancestry: a weaker proof,
@@ -18,9 +22,11 @@ set -euo pipefail
 
 dry_run=false
 squashed=false
+remove_worktrees=false
 for arg in "$@"; do
   case "$arg" in
     -n|--dry-run) dry_run=true ;;
+    --worktrees) remove_worktrees=true ;;
     --squashed) squashed=true ;;
     -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
     *) echo "git tidy: unknown option: $arg" >&2; exit 2 ;;
@@ -75,6 +81,20 @@ landed_as_squash() {
   case "$(git cherry "$default" "$replayed")" in "-"*) return 0 ;; *) return 1 ;; esac
 }
 
+# Why a linked worktree must be preserved, or empty when Git may remove it.
+worktree_holding() {
+  local path=$1 worktree_git_dir
+  if [ -n "$(git -C "$path" status --porcelain)" ]; then say "uncommitted changes"; return 0; fi
+  worktree_git_dir=$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null) || {
+    say "cannot inspect"; return 0;
+  }
+  if [ -d "$worktree_git_dir/rebase-merge" ] || [ -d "$worktree_git_dir/rebase-apply" ]; then say "a rebase in progress"; return 0; fi
+  if [ -f "$worktree_git_dir/MERGE_HEAD" ]; then say "a merge in progress"; return 0; fi
+  if [ -f "$worktree_git_dir/CHERRY_PICK_HEAD" ]; then say "a cherry-pick in progress"; return 0; fi
+  if [ -f "$worktree_git_dir/BISECT_LOG" ]; then say "a bisect in progress"; return 0; fi
+  return 0
+}
+
 has_origin=false
 if git remote get-url origin >/dev/null 2>&1; then
   has_origin=true
@@ -123,8 +143,100 @@ if ! $dry_run && $has_origin && git show-ref --verify --quiet "refs/remotes/orig
   fi
 fi
 
+removed_worktrees=0
+removed_worktree_names=""
+removable_worktree_branches=""
+kept_worktrees=0
+kept_worktree_names=""
+record_worktree_kept() {
+  kept_worktrees=$((kept_worktrees + 1))
+  kept_worktree_names="${kept_worktree_names}${kept_worktree_names:+
+}  $1 ($2)"
+}
+
+if $remove_worktrees; then
+  current_root=$(git rev-parse --show-toplevel)
+  worktree_number=0
+  worktree_path=""
+  worktree_head=""
+  worktree_branch=""
+  worktree_locked=false
+  worktree_prunable=false
+
+  inspect_worktree() {
+    local label held landed
+    [ -n "$worktree_path" ] || return 0
+    worktree_number=$((worktree_number + 1))
+
+    # Git lists the primary worktree first. The checkout running this command
+    # and the default branch are also never removal candidates.
+    [ "$worktree_number" -ne 1 ] || return 0
+    [ "$worktree_path" != "$current_root" ] || return 0
+    [ "$worktree_branch" != "$default" ] || return 0
+
+    label=${worktree_branch:-detached HEAD at ${worktree_head:0:7}}
+    if $worktree_locked; then
+      record_worktree_kept "$worktree_path" "locked"; return 0
+    fi
+    if $worktree_prunable || [ ! -d "$worktree_path" ]; then
+      record_worktree_kept "$worktree_path" "directory missing; registration will be pruned"; return 0
+    fi
+
+    held=$(worktree_holding "$worktree_path")
+    if [ -n "$held" ]; then
+      record_worktree_kept "$worktree_path" "$held"; return 0
+    fi
+
+    landed=false
+    git merge-base --is-ancestor "$worktree_head" "$default" 2>/dev/null && landed=true
+    if ! $landed && $squashed && [ -n "$worktree_branch" ] && landed_as_squash "$worktree_branch"; then
+      landed=true
+    fi
+    if ! $landed; then
+      record_worktree_kept "$worktree_path" "unmerged"; return 0
+    fi
+
+    if act git worktree remove -- "$worktree_path"; then
+      removed_worktrees=$((removed_worktrees + 1))
+      removed_worktree_names="${removed_worktree_names}${removed_worktree_names:+
+}  $worktree_path ($label)"
+      if [ -n "$worktree_branch" ]; then
+        removable_worktree_branches="${removable_worktree_branches}${removable_worktree_branches:+
+}$worktree_branch"
+      fi
+    else
+      record_worktree_kept "$worktree_path" "removal failed"
+    fi
+  }
+
+  # Porcelain records are separated by a blank line. Avoid a pipeline here so
+  # the counters changed by inspect_worktree remain in this shell.
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "") inspect_worktree; worktree_path=""; worktree_head=""; worktree_branch=""; worktree_locked=false; worktree_prunable=false ;;
+      "worktree "*) worktree_path=${line#worktree } ;;
+      "HEAD "*) worktree_head=${line#HEAD } ;;
+      "branch refs/heads/"*) worktree_branch=${line#branch refs/heads/} ;;
+      locked*) worktree_locked=true ;;
+      prunable*) worktree_prunable=true ;;
+    esac
+  done < <(git worktree list --porcelain)
+  inspect_worktree
+fi
+
 # A branch checked out in another worktree is in use, and git would refuse it.
 elsewhere=$(git worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
+if $dry_run && $remove_worktrees && [ -n "$removable_worktree_branches" ]; then
+  still_elsewhere=""
+  while IFS= read -r branch; do
+    case $'\n'"$removable_worktree_branches"$'\n' in
+      *$'\n'"$branch"$'\n'*) continue ;;
+    esac
+    still_elsewhere="${still_elsewhere}${still_elsewhere:+
+}$branch"
+  done <<< "$elsewhere"
+  elsewhere=$still_elsewhere
+fi
 deleted=0
 deleted_names=""
 kept=0
@@ -185,6 +297,18 @@ else
 fi
 [ -z "$checkout_note" ] || say "$checkout_note"
 [ -z "$update_note" ] || say "$update_note"
+if $remove_worktrees; then
+  say ""
+  if $dry_run; then
+    say "Would remove worktrees: $removed_worktrees"
+  else
+    say "Removed worktrees: $removed_worktrees"
+  fi
+  [ "$removed_worktrees" -eq 0 ] || say "$removed_worktree_names"
+  say ""
+  say "Kept worktrees: $kept_worktrees"
+  [ "$kept_worktrees" -eq 0 ] || say "$kept_worktree_names"
+fi
 say ""
 if $dry_run; then
   say "Would delete branches: $deleted"

@@ -58,9 +58,12 @@ case "$output" in *"Would delete branches: 1"*) ;; *) echo "dry run found the wr
 test -d "$fixture_root/merged worktree"
 test -d "$fixture_root/detached"
 
-output=$(cd "$repo" && "$script_dir/scripts/git-tidy")
+progress=$fixture_root/progress
+output=$(cd "$repo" && "$script_dir/scripts/git-tidy" 2>"$progress")
 case "$output" in *"Removed worktrees: 2"*) ;; *) echo "run removed the wrong number of worktrees" >&2; exit 1 ;; esac
 case "$output" in *"Kept worktrees: 3"*) ;; *) echo "run kept the wrong number of worktrees" >&2; exit 1 ;; esac
+grep -qx 'Removing worktrees: 0/2' "$progress"
+grep -qx 'Removing worktrees: 2/2' "$progress"
 test ! -e "$fixture_root/merged worktree"
 test ! -e "$fixture_root/detached"
 test -d "$fixture_root/dirty"

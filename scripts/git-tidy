@@ -150,10 +150,66 @@ removed_worktree_names=""
 removable_worktree_branches=""
 kept_worktrees=0
 kept_worktree_names=""
+# Removing a worktree is mostly filesystem work (typically deleting a large
+# node_modules tree). Run a few removals together so one slow directory does not
+# serialize every other cleanup, while keeping the fan-out low enough not to
+# overwhelm the disk.
+worktree_remove_jobs=4
+worktree_remove_pids=()
+worktree_remove_paths=()
+worktree_remove_labels=()
+worktree_remove_branches=()
 record_worktree_kept() {
   kept_worktrees=$((kept_worktrees + 1))
   kept_worktree_names="${kept_worktree_names}${kept_worktree_names:+
 }  $1 ($2)"
+}
+
+finish_worktree_removals() {
+  local i path label branch
+  for ((i = 0; i < ${#worktree_remove_pids[@]}; i++)); do
+    path=${worktree_remove_paths[$i]}
+    label=${worktree_remove_labels[$i]}
+    branch=${worktree_remove_branches[$i]}
+    if wait "${worktree_remove_pids[$i]}"; then
+      removed_worktrees=$((removed_worktrees + 1))
+      removed_worktree_names="${removed_worktree_names}${removed_worktree_names:+
+}  $path ($label)"
+      if [ -n "$branch" ]; then
+        removable_worktree_branches="${removable_worktree_branches}${removable_worktree_branches:+
+}$branch"
+      fi
+    else
+      record_worktree_kept "$path" "removal failed"
+    fi
+  done
+  worktree_remove_pids=()
+  worktree_remove_paths=()
+  worktree_remove_labels=()
+  worktree_remove_branches=()
+}
+
+remove_worktree() {
+  local path=$1 label=$2 branch=$3
+  if $dry_run; then
+    removed_worktrees=$((removed_worktrees + 1))
+    removed_worktree_names="${removed_worktree_names}${removed_worktree_names:+
+}  $path ($label)"
+    if [ -n "$branch" ]; then
+      removable_worktree_branches="${removable_worktree_branches}${removable_worktree_branches:+
+}$branch"
+    fi
+    return 0
+  fi
+
+  git worktree remove -- "$path" &
+  worktree_remove_pids+=("$!")
+  worktree_remove_paths+=("$path")
+  worktree_remove_labels+=("$label")
+  worktree_remove_branches+=("$branch")
+  if [ "${#worktree_remove_pids[@]}" -ge "$worktree_remove_jobs" ]; then
+    finish_worktree_removals
+  fi
 }
 
 if $remove_worktrees; then
@@ -198,17 +254,7 @@ if $remove_worktrees; then
       record_worktree_kept "$worktree_path" "unmerged"; return 0
     fi
 
-    if act git worktree remove -- "$worktree_path"; then
-      removed_worktrees=$((removed_worktrees + 1))
-      removed_worktree_names="${removed_worktree_names}${removed_worktree_names:+
-}  $worktree_path ($label)"
-      if [ -n "$worktree_branch" ]; then
-        removable_worktree_branches="${removable_worktree_branches}${removable_worktree_branches:+
-}$worktree_branch"
-      fi
-    else
-      record_worktree_kept "$worktree_path" "removal failed"
-    fi
+    remove_worktree "$worktree_path" "$label" "$worktree_branch"
   }
 
   # Porcelain records are separated by a blank line. Avoid a pipeline here so
@@ -224,6 +270,7 @@ if $remove_worktrees; then
     esac
   done < <(git worktree list --porcelain)
   inspect_worktree
+  finish_worktree_removals
 fi
 
 # A branch checked out in another worktree is in use, and git would refuse it.

@@ -159,10 +159,34 @@ worktree_remove_pids=()
 worktree_remove_paths=()
 worktree_remove_labels=()
 worktree_remove_branches=()
+worktree_candidate_paths=()
+worktree_candidate_labels=()
+worktree_candidate_branches=()
+worktree_removals_finished=0
 record_worktree_kept() {
   kept_worktrees=$((kept_worktrees + 1))
   kept_worktree_names="${kept_worktree_names}${kept_worktree_names:+
 }  $1 ($2)"
+}
+
+record_worktree_removed() {
+  local path=$1 label=$2 branch=$3
+  removed_worktrees=$((removed_worktrees + 1))
+  removed_worktree_names="${removed_worktree_names}${removed_worktree_names:+
+}  $path ($label)"
+  if [ -n "$branch" ]; then
+    removable_worktree_branches="${removable_worktree_branches}${removable_worktree_branches:+
+}$branch"
+  fi
+}
+
+show_worktree_progress() {
+  local total=${#worktree_candidate_paths[@]}
+  if [ -t 2 ]; then
+    printf '\rRemoving worktrees: %d/%d' "$worktree_removals_finished" "$total" >&2
+  else
+    printf 'Removing worktrees: %d/%d\n' "$worktree_removals_finished" "$total" >&2
+  fi
 }
 
 finish_worktree_removals() {
@@ -172,16 +196,12 @@ finish_worktree_removals() {
     label=${worktree_remove_labels[$i]}
     branch=${worktree_remove_branches[$i]}
     if wait "${worktree_remove_pids[$i]}"; then
-      removed_worktrees=$((removed_worktrees + 1))
-      removed_worktree_names="${removed_worktree_names}${removed_worktree_names:+
-}  $path ($label)"
-      if [ -n "$branch" ]; then
-        removable_worktree_branches="${removable_worktree_branches}${removable_worktree_branches:+
-}$branch"
-      fi
+      record_worktree_removed "$path" "$label" "$branch"
     else
       record_worktree_kept "$path" "removal failed"
     fi
+    worktree_removals_finished=$((worktree_removals_finished + 1))
+    show_worktree_progress
   done
   worktree_remove_pids=()
   worktree_remove_paths=()
@@ -191,17 +211,6 @@ finish_worktree_removals() {
 
 remove_worktree() {
   local path=$1 label=$2 branch=$3
-  if $dry_run; then
-    removed_worktrees=$((removed_worktrees + 1))
-    removed_worktree_names="${removed_worktree_names}${removed_worktree_names:+
-}  $path ($label)"
-    if [ -n "$branch" ]; then
-      removable_worktree_branches="${removable_worktree_branches}${removable_worktree_branches:+
-}$branch"
-    fi
-    return 0
-  fi
-
   git worktree remove -- "$path" &
   worktree_remove_pids+=("$!")
   worktree_remove_paths+=("$path")
@@ -254,7 +263,9 @@ if $remove_worktrees; then
       record_worktree_kept "$worktree_path" "unmerged"; return 0
     fi
 
-    remove_worktree "$worktree_path" "$label" "$worktree_branch"
+    worktree_candidate_paths+=("$worktree_path")
+    worktree_candidate_labels+=("$label")
+    worktree_candidate_branches+=("$worktree_branch")
   }
 
   # Porcelain records are separated by a blank line. Avoid a pipeline here so
@@ -270,7 +281,18 @@ if $remove_worktrees; then
     esac
   done < <(git worktree list --porcelain)
   inspect_worktree
-  finish_worktree_removals
+  if $dry_run; then
+    for ((i = 0; i < ${#worktree_candidate_paths[@]}; i++)); do
+      record_worktree_removed "${worktree_candidate_paths[$i]}" "${worktree_candidate_labels[$i]}" "${worktree_candidate_branches[$i]}"
+    done
+  elif [ "${#worktree_candidate_paths[@]}" -gt 0 ]; then
+    show_worktree_progress
+    for ((i = 0; i < ${#worktree_candidate_paths[@]}; i++)); do
+      remove_worktree "${worktree_candidate_paths[$i]}" "${worktree_candidate_labels[$i]}" "${worktree_candidate_branches[$i]}"
+    done
+    finish_worktree_removals
+    if [ -t 2 ]; then printf '\n' >&2; fi
+  fi
 fi
 
 # A branch checked out in another worktree is in use, and git would refuse it.

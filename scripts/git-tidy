@@ -5,8 +5,10 @@
 # Work in progress is never destroyed. A dirty tree, a detached HEAD or a paused
 # rebase/merge keeps the current branch checked out (the default branch is still
 # brought up to date in place), and a branch is only deleted once every one of
-# its commits is proven to be in the default branch already. Nothing is reset,
-# forced or cleaned, and the default branch is only ever fast-forwarded.
+# its commits is proven to be in the default branch already. Newly created
+# linked worktrees are kept for three hours even when they are otherwise clean.
+# Nothing is reset, forced or cleaned, and the default branch is only ever
+# fast-forwarded.
 #
 #   git tidy              switch, update, remove merged worktrees and branches
 #   git tidy -n           show what it would do, change nothing
@@ -18,8 +20,9 @@
 #                         which is why it is opt-in.
 #
 # Git cannot tell whether another tool intends to resume work in an otherwise
-# safe worktree. Lock such a worktree to preserve it. Ignored files are removed
-# with an eligible worktree.
+# safe worktree. The three-hour grace period protects newly started work; lock
+# a worktree that must be preserved longer. Ignored files are removed with an
+# eligible worktree.
 set -euo pipefail
 
 dry_run=false
@@ -40,6 +43,24 @@ git_dir=$(git rev-parse --git-dir)
 
 say() { printf '%s\n' "$*"; }
 act() { if ! $dry_run; then "$@"; fi; }
+
+# A linked worktree's administrative `gitdir` file is written when Git creates
+# its registration and is not updated by ordinary work in that checkout. Its
+# modification time is therefore the closest Git-maintained creation timestamp.
+# If it cannot be read, preserve the worktree rather than guessing.
+worktree_age_seconds() {
+  local path=$1 worktree_git_dir registration registered_at now
+  worktree_git_dir=$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  registration=$worktree_git_dir/gitdir
+  case "$(uname -s)" in
+    Darwin|FreeBSD|NetBSD|OpenBSD) registered_at=$(stat -f %m "$registration" 2>/dev/null) ;;
+    *) registered_at=$(stat -c %Y "$registration" 2>/dev/null) ;;
+  esac
+  case $registered_at in ''|*[!0-9]*) return 1 ;; esac
+  now=$(date +%s)
+  case $now in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$((now - registered_at))"
+}
 
 # Prefers what the remote calls its default, recording it so later runs need no
 # network. origin/HEAD is a symbolic ref and keeps resolving after the branch it
@@ -163,6 +184,7 @@ worktree_candidate_paths=()
 worktree_candidate_labels=()
 worktree_candidate_branches=()
 worktree_removals_finished=0
+worktree_grace_seconds=$((3 * 60 * 60))
 record_worktree_kept() {
   kept_worktrees=$((kept_worktrees + 1))
   kept_worktree_names="${kept_worktree_names}${kept_worktree_names:+
@@ -231,7 +253,7 @@ if $remove_worktrees; then
   worktree_prunable=false
 
   inspect_worktree() {
-    local label held landed
+    local label held landed age
     [ -n "$worktree_path" ] || return 0
     worktree_number=$((worktree_number + 1))
 
@@ -252,6 +274,13 @@ if $remove_worktrees; then
     held=$(worktree_holding "$worktree_path")
     if [ -n "$held" ]; then
       record_worktree_kept "$worktree_path" "$held"; return 0
+    fi
+
+    age=$(worktree_age_seconds "$worktree_path") || {
+      record_worktree_kept "$worktree_path" "cannot determine creation time"; return 0
+    }
+    if [ "$age" -lt "$worktree_grace_seconds" ]; then
+      record_worktree_kept "$worktree_path" "created less than 3 hours ago"; return 0
     fi
 
     landed=false

@@ -48,6 +48,21 @@ git -C "$fixture_root/unmerged" commit --quiet -am unmerged
 
 git -C "$repo" worktree add --quiet --detach "$fixture_root/detached" main
 
+age_worktree() {
+  local path=$1 hours=$2 timestamp worktree_git_dir
+  if ! timestamp=$(date -v-"${hours}"H '+%Y%m%d%H%M.%S' 2>/dev/null); then
+    timestamp=$(date -d "$hours hours ago" '+%Y%m%d%H%M.%S')
+  fi
+  worktree_git_dir=$(git -C "$path" rev-parse --absolute-git-dir)
+  touch -t "$timestamp" "$worktree_git_dir/gitdir"
+}
+
+# Worktrees that represent completed work are old enough to clean up. A new,
+# otherwise identical detached worktree must remain within the grace period.
+age_worktree "$fixture_root/merged worktree" 4
+age_worktree "$fixture_root/detached" 4
+git -C "$repo" worktree add --quiet --detach "$fixture_root/grace" main
+
 output=$(cd "$repo" && "$script_dir/scripts/git-tidy" --no-worktrees)
 test -d "$fixture_root/merged worktree"
 case "$output" in *"merged (in use by worktree)"*) ;; *) echo "--no-worktrees did not preserve worktree branch" >&2; exit 1 ;; esac
@@ -55,13 +70,15 @@ case "$output" in *"merged (in use by worktree)"*) ;; *) echo "--no-worktrees di
 output=$(cd "$repo" && "$script_dir/scripts/git-tidy" --dry-run)
 case "$output" in *"Would remove worktrees: 2"*) ;; *) echo "dry run found the wrong removal count" >&2; exit 1 ;; esac
 case "$output" in *"Would delete branches: 1"*) ;; *) echo "dry run found the wrong branch count" >&2; exit 1 ;; esac
+case "$output" in *"grace (created less than 3 hours ago)"*) ;; *) echo "dry run did not preserve the new worktree" >&2; exit 1 ;; esac
 test -d "$fixture_root/merged worktree"
 test -d "$fixture_root/detached"
+test -d "$fixture_root/grace"
 
 progress=$fixture_root/progress
 output=$(cd "$repo" && "$script_dir/scripts/git-tidy" 2>"$progress")
 case "$output" in *"Removed worktrees: 2"*) ;; *) echo "run removed the wrong number of worktrees" >&2; exit 1 ;; esac
-case "$output" in *"Kept worktrees: 3"*) ;; *) echo "run kept the wrong number of worktrees" >&2; exit 1 ;; esac
+case "$output" in *"Kept worktrees: 4"*) ;; *) echo "run kept the wrong number of worktrees" >&2; exit 1 ;; esac
 grep -qx 'Removing worktrees: 0/2' "$progress"
 grep -qx 'Removing worktrees: 2/2' "$progress"
 test ! -e "$fixture_root/merged worktree"
@@ -69,6 +86,7 @@ test ! -e "$fixture_root/detached"
 test -d "$fixture_root/dirty"
 test -d "$fixture_root/locked"
 test -d "$fixture_root/unmerged"
+test -d "$fixture_root/grace"
 git -C "$repo" show-ref --verify --quiet refs/heads/dirty
 git -C "$repo" show-ref --verify --quiet refs/heads/locked
 git -C "$repo" show-ref --verify --quiet refs/heads/unmerged
